@@ -1,5 +1,4 @@
 import os
-import numpy as np
 
 try:
     from Cython.Build import cythonize
@@ -15,6 +14,8 @@ else:
 
         from setuptools import Extension
         from distutils.command.build_ext import build_ext
+
+        import numpy as np
 
         ext_modules = cythonize(
             [
