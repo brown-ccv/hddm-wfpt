@@ -19,5 +19,5 @@ scipy = "^1.9.2"
 black = "^22.10.0"
 
 [build-system]
-requires = ["poetry-core>=1.2.0", "cython"]
+requires = ["poetry-core>=1.2.0", "cython", "setuptools"]
 build-backend = "poetry.core.masonry.api"
