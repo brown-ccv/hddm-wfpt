@@ -1,7 +1,12 @@
 from setuptools import setup
 from setuptools import Extension
 
-import numpy as np
+class get_numpy_include(object):
+    """Defer numpy.get_include() until after numpy is installed."""
+
+    def __str__(self):
+        import numpy
+        return numpy.get_include()
 
 try:
     from Cython.Build import cythonize
@@ -45,7 +50,7 @@ setup(
     packages=["hddm_wfpt"],  # 'hddm.cnn', 'hddm.cnn_models', 'hddm.keras_models',
     description="HDDM is a python module that implements Hierarchical Bayesian estimation of Drift Diffusion Models.",
     install_requires=["NumPy >=1.23.4", "SciPy >= 1.9.1", "cython >= 0.29.32"],
-    include_dirs=[np.get_include()],
+    include_dirs=[get_numpy_include()],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Environment :: Console",
