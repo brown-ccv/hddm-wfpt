@@ -1,3 +1,5 @@
+import platform
+
 from setuptools import setup
 from setuptools import Extension
 
@@ -6,15 +8,20 @@ import numpy as np
 try:
     from Cython.Build import cythonize
 
+    if platform.system() == "Darwin":
+        ext1 = Extension(
+            "wfpt",
+            ["hddm_wfpt/wfpt.pyx"],
+            language="c++",
+            extra_compile_args=["-stdlib=libc++"],
+            extra_link_args=["-stdlib=libc++", "-mmacosx-version-min=10.9"],
+        )
+    else:
+        ext1 = Extension("wfpt", ["hddm_wfpt/wfpt.pyx"], language="c++")
+
     ext_modules = cythonize(
         [
-            Extension(
-                "wfpt",
-                ["hddm_wfpt/wfpt.pyx"],
-                language="c++",
-                extra_compile_args=["-stdlib=libc++"],
-                extra_link_args=["-stdlib=libc++", "-mmacosx-version-min=10.9"],
-            ),
+            ext1,
             Extension(
                 "cdfdif_wrapper",
                 ["hddm_wfpt/cdfdif_wrapper.pyx", "hddm_wfpt/cdfdif.c"],
