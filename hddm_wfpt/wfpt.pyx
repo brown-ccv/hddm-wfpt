@@ -75,6 +75,38 @@ def wiener_like(np.ndarray[double, ndim=1] x, double v, double sv, double a, dou
 
     return sum_logp
 
+def wiener_like_multi(np.ndarray[double, ndim=1] x, v, sv, a, z, sz, t, st, double err, multi=None,
+                      int n_st=10, int n_sz=10, bint use_adaptive=1, double simps_err=1e-3,
+                      double p_outlier=0, double w_outlier=0):
+    cdef Py_ssize_t size = x.shape[0]
+    cdef Py_ssize_t i
+    cdef double p = 0
+    cdef double sum_logp = 0
+    cdef double wp_outlier = w_outlier * p_outlier
+
+    if multi is None:
+        return full_pdf(x, v, sv, a, z, sz, t, st, err)
+    else:
+        params = {'v': v, 'z': z, 't': t, 'a': a, 'sv': sv, 'sz': sz, 'st': st}
+        params_iter = copy(params)
+        for i in range(size):
+            for param in multi:
+                params_iter[param] = params[param][i]
+            if abs(x[i]) != 999.:
+                p = full_pdf(x[i], params_iter['v'],
+                             params_iter['sv'], params_iter['a'], params_iter['z'],
+                             params_iter['sz'], params_iter['t'], params_iter['st'],
+                             err, n_st, n_sz, use_adaptive, simps_err)
+                p = p * (1 - p_outlier) + wp_outlier
+            elif x[i] == 999.:
+                p = prob_ub(params_iter['v'], params_iter['a'], params_iter['z'])
+            else: # x[i] == -999.
+                p = 1 - prob_ub(params_iter['v'], params_iter['a'], params_iter['z'])
+
+            sum_logp += log(p)
+
+        return sum_logp
+
 def wiener_logp_array(np.ndarray[double, ndim=1] x, 
                       np.ndarray[double, ndim=1] v, 
                       np.ndarray[double, ndim=1] sv,
@@ -104,15 +136,15 @@ def wiener_logp_array(np.ndarray[double, ndim=1] x,
     for i in range(size):
         p = full_pdf(x[i], v[i], sv[i], a[i], z[i], sz[i], t[i], st[i], err,
                      n_st, n_sz, use_adaptive, simps_err)
-                     
+
         # If one probability = 0, the log sum will be -Inf
         p = p * (1 - p_outlier) + wp_outlier
-        # print(p)
+
         if p == 0:
             logp[i] = -np.inf
         else: 
             logp[i] = np.log(p)
-
+            
     return logp
 
 def wiener_like_rlddm(np.ndarray[double, ndim=1] x,
