@@ -26,11 +26,6 @@ try:
                 "cdfdif_wrapper",
                 ["hddm_wfpt/cdfdif_wrapper.pyx", "hddm_wfpt/cdfdif.c"],
             ),
-            Extension(
-                "data_simulators",
-                ["hddm_wfpt/cddm_data_simulation.pyx"],
-                language="c++",
-            ),
         ],
         compiler_directives={"language_level": "3", "linetrace": True},
     )
@@ -40,17 +35,16 @@ except ImportError:
     ext_modules = [
         Extension("wfpt", ["src/wfpt.cpp"], language="c++"),
         Extension("cdfdif_wrapper", ["src/cdfdif_wrapper.c", "src/cdfdif.c"]),
-        Extension("data_simulators", ["src/cddm_data_simulation.cpp"], language="c++"),
     ]
 
 setup(
     name="hddm-wfpt",
-    version="0.1.0",
+    version="0.1.1",
     author="Thomas V. Wiecki, Imri Sofer, Michael J. Frank, Mads Lund Pedersen, Alexander Fengler, Lakshmi Govindarajan, Krishn Bera",
-    author_email="thomas.wiecki@gmail.com",
-    url="http://github.com/hddm-devs/hddm",
+    author_email="alexander_fengler@brown.com",
+    url="http://github.com/lncc/hddm-wfpt",
     packages=["hddm_wfpt"],  # 'hddm.cnn', 'hddm.cnn_models', 'hddm.keras_models',
-    description="HDDM is a python module that implements Hierarchical Bayesian estimation of Drift Diffusion Models.",
+    description="Collects a bunch of cython implementations of basic DDM likelihoods",
     install_requires=["NumPy >=1.23.4", "SciPy >= 1.9.1", "cython >= 0.29.32"],
     include_dirs=[np.get_include()],
     classifiers=[

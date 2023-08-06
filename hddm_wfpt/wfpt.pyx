@@ -75,6 +75,46 @@ def wiener_like(np.ndarray[double, ndim=1] x, double v, double sv, double a, dou
 
     return sum_logp
 
+def wiener_logp_array(np.ndarray[double, ndim=1] x, 
+                      np.ndarray[double, ndim=1] v, 
+                      np.ndarray[double, ndim=1] sv,
+                      np.ndarray[double, ndim=1] a, 
+                      np.ndarray[double, ndim=1] z, 
+                      np.ndarray[double, ndim=1] sz, 
+                      np.ndarray[double, ndim=1] t,
+                      np.ndarray[double, ndim=1] st, 
+                      double err, 
+                      int n_st=10, 
+                      int n_sz=10, 
+                      bint use_adaptive=1, 
+                      double simps_err=1e-8,
+                      double p_outlier=0, 
+                      double w_outlier=0.1):
+    
+    cdef Py_ssize_t size = x.shape[0]
+    cdef Py_ssize_t i
+    cdef np.ndarray[double, ndim=1] logp = np.empty(size, dtype=np.double)
+    cdef double p
+    cdef double wp_outlier = w_outlier * p_outlier
+
+    if not p_outlier_in_range(p_outlier):
+        logp[:] = -np.inf
+        return logp
+
+    for i in range(size):
+        p = full_pdf(x[i], v[i], sv[i], a[i], z[i], sz[i], t[i], st[i], err,
+                     n_st, n_sz, use_adaptive, simps_err)
+                     
+        # If one probability = 0, the log sum will be -Inf
+        p = p * (1 - p_outlier) + wp_outlier
+        # print(p)
+        if p == 0:
+            logp[i] = -np.inf
+        else: 
+            logp[i] = np.log(p)
+
+    return logp
+
 def wiener_like_rlddm(np.ndarray[double, ndim=1] x,
                       np.ndarray[long, ndim=1] response,
                       np.ndarray[double, ndim=1] feedback,
@@ -513,41 +553,6 @@ def wiener_like_rlssm_nn_reg(np.ndarray[float, ndim=2] data,
 
     return sum_logp
 
-
-def gen_rts_from_cdf(double v, double sv, double a, double z, double sz, double t,
-                     double st, int samples=1000, double cdf_lb=-6, double cdf_ub=6, double dt=1e-2):
-
-    cdef np.ndarray[double, ndim = 1] x = np.arange(cdf_lb, cdf_ub, dt)
-    cdef np.ndarray[double, ndim = 1] l_cdf = np.empty(x.shape[0], dtype=np.double)
-    cdef double pdf, rt
-    cdef Py_ssize_t size = x.shape[0]
-    cdef Py_ssize_t i, j
-    cdef int idx
-
-    l_cdf[0] = 0
-    for i from 1 <= i < size:
-        pdf = full_pdf(x[i], v, sv, a, z, sz, 0, 0, 1e-4)
-        l_cdf[i] = l_cdf[i - 1] + pdf
-
-    l_cdf /= l_cdf[x.shape[0] - 1]
-
-    cdef np.ndarray[double, ndim = 1] rts = np.empty(samples, dtype=np.double)
-    cdef np.ndarray[double, ndim = 1] f = np.random.rand(samples)
-    cdef np.ndarray[double, ndim = 1] delay
-
-    if st != 0:
-        delay = (np.random.rand(samples) * st + (t - st / 2.))
-    for i from 0 <= i < samples:
-        idx = np.searchsorted(l_cdf, f[i])
-        rt = x[idx]
-        if st == 0:
-            rt = rt + np.sign(rt) * t
-        else:
-            rt = rt + np.sign(rt) * delay[i]
-        rts[i] = rt
-    return rts
-
-
 def wiener_like_contaminant(np.ndarray[double, ndim=1] x, np.ndarray[int, ndim=1] cont_x, double v,
                             double sv, double a, double z, double sz, double t, double st, double t_min,
                             double t_max, double err, int n_st=10, int n_sz=10, bint use_adaptive=1,
@@ -625,107 +630,17 @@ def split_cdf(np.ndarray[double, ndim=1] x, np.ndarray[double, ndim=1] data):
 
     return (x_lb, lb, x_ub, ub)
 
-
-# NEW WITH NN-EXTENSION
-
-#############
-# Basic MLP Likelihoods
-def wiener_like_nn_mlp(np.ndarray[float, ndim = 1] rt,
-                       np.ndarray[float, ndim = 1] response,
-                       np.ndarray[float, ndim = 1] params,
-                       double p_outlier = 0,
-                       double w_outlier = 0,
-                       network = None):
-
-    cdef Py_ssize_t size = rt.shape[0]
-    cdef Py_ssize_t n_params = params.shape[0]
-    cdef float log_p = 0
-    cdef float ll_min = -16.11809
-
-    cdef np.ndarray[float, ndim = 2] data = np.zeros((size, n_params + 2), dtype = np.float32)
-    data[:, :n_params] = np.tile(params, (size, 1)).astype(np.float32)
-    data[:, n_params:] = np.stack([rt, response], axis = 1)
-
-    # Call to network:
-    if p_outlier == 0:
-        log_p = np.sum(np.core.umath.maximum(network.predict_on_batch(data), ll_min))
-    else:
-        log_p = np.sum(np.log(np.exp(np.core.umath.maximum(network.predict_on_batch(data), ll_min)) * (1.0 - p_outlier) + (w_outlier * p_outlier)))
-
-    return log_p
-
-# Basic MLP Likelihoods
-def wiener_like_nn_mlp_info(np.ndarray[float, ndim = 1] rt,
-                            np.ndarray[float, ndim = 1] response,
-                            np.ndarray[float, ndim = 1] params,
-                            np.ndarray[float, ndim = 1] upper_bounds,
-                            np.ndarray[float, ndim = 1] lower_bounds,
-                            double p_outlier = 0,
-                            double w_outlier = 0,
-                            network = None):
-
-    cdef Py_ssize_t size = rt.shape[0]
-    cdef Py_ssize_t n_params = params.shape[0]
-    cdef float log_p = 0
-    cdef float ll_min = -16.11809
-    cdef float[:] upper_bounds_view = upper_bounds
-    cdef float[:] lower_bounds_view = lower_bounds
-    cdef float[:] params_view = params
-
-    cdef np.ndarray[float, ndim = 2] data = np.zeros((size, n_params + 2), dtype = np.float32)
-    data[:, :n_params] = np.tile(params, (size, 1)).astype(np.float32)
-    data[:, n_params:] = np.stack([rt, response], axis = 1)
-
-    for i in range(n_params):
-        if params_view[i] > upper_bounds_view[i]:
-            return -np.inf
-        elif params_view[i] < lower_bounds_view[i]:
-            return -np.inf
-
-    # Call to network:
-    if p_outlier == 0:
-        log_p = np.sum(np.core.umath.maximum(network.predict_on_batch(data), ll_min))
-    else:
-        log_p = np.sum(np.log(np.exp(np.core.umath.maximum(network.predict_on_batch(data), ll_min)) * (1.0 - p_outlier) + (w_outlier * p_outlier)))
-
-    return log_p
-
-def wiener_like_nn_mlp_pdf(np.ndarray[float, ndim = 1] rt,
-                           np.ndarray[float, ndim = 1] response,
-                           np.ndarray[float, ndim = 1] params,
-                           double p_outlier = 0, 
-                           double w_outlier = 0,
-                           bint logp = 0,
-                           network = None):
-    
-    cdef Py_ssize_t size = rt.shape[0]
-    cdef Py_ssize_t n_params = params.shape[0]
-
-    cdef np.ndarray[float, ndim = 1] log_p = np.zeros(size, dtype = np.float32)
-    cdef float ll_min = -16.11809
-
-    cdef np.ndarray[float, ndim = 2] data = np.zeros((size, n_params + 2), dtype = np.float32)
-    data[:, :n_params] = np.tile(params, (size, 1)).astype(np.float32)
-    data[:, n_params:] = np.stack([rt, response], axis = 1)
-
-    # Call to network:
-    if p_outlier == 0: # ddm_model
-        log_p = np.squeeze(np.core.umath.maximum(network.predict_on_batch(data), ll_min))
-    else: # ddm_model
-        log_p = np.squeeze(np.log(np.exp(np.core.umath.maximum(network.predict_on_batch(data), ll_min)) * (1.0 - p_outlier) + (w_outlier * p_outlier)))
-    if logp == 0:
-        log_p = np.exp(log_p) # shouldn't be called log_p anymore but no need for an extra array here
-    return log_p
-
-################
-# Regression style likelihoods: (Can prob simplify and make all mlp likelihoods of this form)
-
 def wiener_like_multi_nn_mlp(np.ndarray[float, ndim = 2] data,
                              double p_outlier = 0, 
                              double w_outlier = 0,
                              network = None):
                              #**kwargs):
     
+    # data is a matrix of shape (n_samples, n_params + 2)
+    # where the first n_params columns are the parameters
+    # and the last two columns are the rt and response
+    # (in that order)
+
     cdef float ll_min = -16.11809
     cdef float log_p
 
@@ -741,6 +656,11 @@ def wiener_like_multi_nn_mlp_pdf(np.ndarray[float, ndim = 2] data,
                                  double w_outlier = 0,
                                  network = None):
                                  #**kwargs):
+
+    # data is a matrix of shape (n_samples, n_params + 2)
+    # where the first n_params columns are the parameters
+    # and the last two columns are the rt and response
+    # (in that order)
     
     cdef float ll_min = -16.11809
     cdef float log_p
@@ -751,80 +671,3 @@ def wiener_like_multi_nn_mlp_pdf(np.ndarray[float, ndim = 2] data,
     else:
         log_p = np.squeeze(np.log(np.exp(np.core.umath.maximum(network.predict_on_batch(data), ll_min)) * (1.0 - p_outlier) + (w_outlier * p_outlier)))
     return log_p
-
-###########
-# Basic CNN likelihoods
-
-#def wiener_like_cnn_2(np.ndarray[long, ndim = 1] x, 
-#                      np.ndarray[long, ndim = 1] response, 
-#                      np.ndarray[float, ndim = 1] parameters,
-#                      double p_outlier = 0, 
-#                      double w_outlier = 0,
-#                      **kwargs):
-#
-#    cdef Py_ssize_t size = x.shape[0]
-#    cdef Py_ssize_t i 
-#    cdef float log_p = 0
-#    cdef np.ndarray[float, ndim = 2] pred = kwargs['network'](parameters)
-#    #log_p = 0
-#    
-#    for i in range(size):
-#        if response[i] == 0:
-#            log_p += np.log(pred[0, 2 * x[i]] * (1 - p_outlier) + w_outlier * p_outlier)
-#        else: 
-#            log_p += np.log(pred[0, 2 * x[i] + 1] * (1 - p_outlier) + w_outlier * p_outlier)
-#
-#    # Call to network:
-#    return log_p
-#
-#def wiener_pdf_cnn_2(np.ndarray[long, ndim = 1] x, 
-#                     np.ndarray[long, ndim = 1] response, 
-#                     np.ndarray[float, ndim = 1] parameters,
-#                     double p_outlier = 0, 
-#                     double w_outlier = 0,
-#                     bint logp = 0,
-#                     **kwargs):
-#
-#    cdef Py_ssize_t size = x.shape[0]
-#    cdef Py_ssize_t i
-#    cdef np.ndarray[float, ndim = 1] log_p = np.zeros(size, dtype = np.float32)
-#    cdef np.ndarray[float, ndim = 2] pred = kwargs['network'](parameters)
-#    #print(pred.shape)
-#    #log_p = 0
-#    for i in range(size):
-#        if response[i] == 0:
-#            log_p[i] += np.log(pred[0, 2 * x[i]] * (1 - p_outlier) + w_outlier * p_outlier)
-#        else: 
-#            log_p[i] += np.log(pred[0, 2 * x[i] + 1] * (1 - p_outlier) + w_outlier * p_outlier)
-#    
-#    if logp == 0:
-#        log_p = np.exp(log_p)
-#
-#    # Call to network:
-#    return log_p
-#
-#def wiener_like_reg_cnn_2(np.ndarray[long, ndim = 1] x, 
-#                          np.ndarray[long, ndim = 1] response, 
-#                          np.ndarray[float, ndim = 2] parameters,
-#                          double p_outlier = 0, 
-#                          double w_outlier = 0,
-#                          bint logp = 0,
-#                          **kwargs):
-#
-#    cdef Py_ssize_t size = x.shape[0]
-#    cdef Py_ssize_t i
-#    cdef float log_p = 0
-#    cdef np.ndarray[float, ndim = 2] pred = kwargs['network'](parameters)
-#    #log_p = 0
-#    #print(pred.shape)
-#    #print(pred)
-#    for i in range(size):
-#        if response[i] == 0:
-#            log_p += np.log(pred[i, 2 * x[i]] * (1 - p_outlier) + w_outlier * p_outlier)
-#        else: 
-#            log_p += np.log(pred[i, 2 * x[i] + 1] * (1 - p_outlier) + w_outlier * p_outlier)
-#    
-#    # Call to network:
-#    return log_p
-#
-#
