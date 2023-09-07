@@ -39,7 +39,7 @@ except ImportError:
 
 setup(
     name="hddm-wfpt",
-    version="0.1.1",
+    version="0.1.0.rc0",
     author="Thomas V. Wiecki, Imri Sofer, Michael J. Frank, Mads Lund Pedersen, Alexander Fengler, Lakshmi Govindarajan, Krishn Bera",
     author_email="alexander_fengler@brown.com",
     url="http://github.com/lncc/hddm-wfpt",
